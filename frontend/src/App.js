@@ -7,6 +7,7 @@ import { AuthPage } from "@/pages/AuthPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
+import { SharedEntryPage } from "@/pages/SharedEntryPage";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/auth" element={<AuthPage />} />
+            <Route path="/shared/:token" element={<SharedEntryPage />} />
             <Route
               path="/dashboard"
               element={

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, Sparkles, BookOpen } from 'lucide-react';
+import { X, Loader2, Sparkles, BookOpen, Lock, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { MoodPicker } from '@/components/MoodPicker';
 import { ImageUpload } from '@/components/ImageUpload';
@@ -17,6 +17,8 @@ export const CreateEntryDialog = ({ open, onOpenChange, onEntryCreated }) => {
   const [mood, setMood] = useState('neutral');
   const [imageUrl, setImageUrl] = useState(null);
   const [tags, setTags] = useState([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [password, setPassword] = useState('');
 
   const resetForm = () => {
     setTitle('');
@@ -24,6 +26,8 @@ export const CreateEntryDialog = ({ open, onOpenChange, onEntryCreated }) => {
     setMood('neutral');
     setImageUrl(null);
     setTags([]);
+    setPassword('');
+    setShowAdvanced(false);
   };
 
   const handleSubmit = async (e) => {
@@ -31,14 +35,17 @@ export const CreateEntryDialog = ({ open, onOpenChange, onEntryCreated }) => {
     setLoading(true);
 
     try {
-      const response = await axios.post(`${API}/entries`, {
+      const payload = {
         title,
         content,
         mood,
         image_url: imageUrl,
         tags,
-      });
-      toast.success('Entry created successfully!');
+      };
+      if (password) payload.password = password;
+
+      const response = await axios.post(`${API}/entries`, payload);
+      toast.success(password ? 'Locked entry created!' : 'Entry created successfully!');
       resetForm();
       onOpenChange(false);
       if (onEntryCreated) onEntryCreated(response.data);
@@ -161,6 +168,50 @@ export const CreateEntryDialog = ({ open, onOpenChange, onEntryCreated }) => {
                         Tags
                       </label>
                       <TagInput value={tags} onChange={setTags} />
+                    </div>
+
+                    {/* Advanced: Password Protection */}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        data-testid="toggle-advanced-button"
+                        className="flex items-center gap-2 text-xs uppercase tracking-[0.15em] text-neutral-500 hover:text-white transition-colors"
+                      >
+                        <Lock className="w-3 h-3" />
+                        Advanced Options
+                        <ChevronDown className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                      </button>
+                      <AnimatePresence>
+                        {showAdvanced && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden mt-3"
+                          >
+                            <div className="p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/10">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Lock className="w-3.5 h-3.5 text-yellow-500" />
+                                <span className="text-xs uppercase tracking-[0.15em] text-yellow-500">
+                                  Password Protection
+                                </span>
+                              </div>
+                              <p className="text-xs text-neutral-500 mb-3">
+                                Lock this entry with a password. It cannot be shared while locked.
+                              </p>
+                              <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="Leave empty for no lock"
+                                data-testid="entry-password-input"
+                                className="w-full bg-[#131822] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-neutral-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none transition-all"
+                              />
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
 

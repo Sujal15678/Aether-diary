@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
 from jose import JWTError, jwt
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -72,6 +73,7 @@ class EntryCreate(BaseModel):
     mood: Optional[str] = "neutral"  # happy, calm, neutral, sad, anxious
     image_url: Optional[str] = None  # base64 image
     tags: Optional[List[str]] = []
+    password: Optional[str] = None  # Optional password protection
 
 class EntryUpdate(BaseModel):
     title: Optional[str] = None
@@ -79,6 +81,7 @@ class EntryUpdate(BaseModel):
     mood: Optional[str] = None
     image_url: Optional[str] = None
     tags: Optional[List[str]] = None
+    password: Optional[str] = None  # Set password or empty string to remove
 
 class Entry(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -90,6 +93,8 @@ class Entry(BaseModel):
     mood: str = "neutral"
     image_url: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
+    password_hash: Optional[str] = None  # bcrypt hash if password protected
+    share_token: Optional[str] = None  # public share token
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -101,6 +106,8 @@ class EntryResponse(BaseModel):
     mood: str
     image_url: Optional[str] = None
     tags: List[str] = []
+    is_locked: bool = False  # True if password protected
+    share_token: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -264,16 +271,46 @@ async def get_me(current_user: User = Depends(get_current_user)):
 # DIARY ENTRY ROUTES
 # ===========================
 
+def _entry_to_response(entry_doc: dict) -> EntryResponse:
+    """Convert a MongoDB entry document to EntryResponse, hiding sensitive fields."""
+    # Convert ISO strings to datetime
+    if isinstance(entry_doc.get('created_at'), str):
+        entry_doc['created_at'] = datetime.fromisoformat(entry_doc['created_at'])
+    if isinstance(entry_doc.get('updated_at'), str):
+        entry_doc['updated_at'] = datetime.fromisoformat(entry_doc['updated_at'])
+    
+    is_locked = bool(entry_doc.get('password_hash'))
+    
+    return EntryResponse(
+        id=entry_doc['id'],
+        user_id=entry_doc['user_id'],
+        title=entry_doc['title'],
+        content='' if is_locked else entry_doc.get('content', ''),  # Hide content if locked
+        mood=entry_doc.get('mood', 'neutral'),
+        image_url=None if is_locked else entry_doc.get('image_url'),  # Hide image if locked
+        tags=entry_doc.get('tags', []),
+        is_locked=is_locked,
+        share_token=entry_doc.get('share_token'),
+        created_at=entry_doc['created_at'],
+        updated_at=entry_doc['updated_at'],
+    )
+
 @api_router.post("/entries", response_model=EntryResponse, status_code=status.HTTP_201_CREATED)
 async def create_entry(entry_data: EntryCreate, current_user: User = Depends(get_current_user)):
     """Create a new diary entry"""
+    # Hash password if provided
+    password_hash = None
+    if entry_data.password:
+        password_hash = hash_password(entry_data.password)
+    
     new_entry = Entry(
         user_id=current_user.id,
         title=entry_data.title,
         content=entry_data.content,
         mood=entry_data.mood or "neutral",
         image_url=entry_data.image_url,
-        tags=entry_data.tags or []
+        tags=entry_data.tags or [],
+        password_hash=password_hash
     )
     
     # Convert to dict and serialize datetimes
@@ -283,7 +320,7 @@ async def create_entry(entry_data: EntryCreate, current_user: User = Depends(get
     
     await db.entries.insert_one(entry_dict)
     
-    return EntryResponse(**new_entry.model_dump())
+    return _entry_to_response(new_entry.model_dump())
 
 @api_router.get("/entries", response_model=List[EntryResponse])
 async def get_entries(
@@ -313,21 +350,7 @@ async def get_entries(
     
     entries = await db.entries.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     
-    # Convert ISO strings back to datetime and handle legacy entries
-    for entry in entries:
-        if isinstance(entry['created_at'], str):
-            entry['created_at'] = datetime.fromisoformat(entry['created_at'])
-        if isinstance(entry['updated_at'], str):
-            entry['updated_at'] = datetime.fromisoformat(entry['updated_at'])
-        # Set defaults for legacy entries
-        if 'mood' not in entry:
-            entry['mood'] = 'neutral'
-        if 'tags' not in entry:
-            entry['tags'] = []
-        if 'image_url' not in entry:
-            entry['image_url'] = None
-    
-    return entries
+    return [_entry_to_response(entry) for entry in entries]
 
 @api_router.get("/entries/{entry_id}", response_model=EntryResponse)
 async def get_entry(entry_id: str, current_user: User = Depends(get_current_user)):
@@ -335,33 +358,12 @@ async def get_entry(entry_id: str, current_user: User = Depends(get_current_user
     entry_doc = await db.entries.find_one({"id": entry_id}, {"_id": 0})
     
     if not entry_doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Entry not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
     
-    # Check ownership
     if entry_doc['user_id'] != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this entry"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this entry")
     
-    # Convert ISO strings to datetime
-    if isinstance(entry_doc['created_at'], str):
-        entry_doc['created_at'] = datetime.fromisoformat(entry_doc['created_at'])
-    if isinstance(entry_doc['updated_at'], str):
-        entry_doc['updated_at'] = datetime.fromisoformat(entry_doc['updated_at'])
-    
-    # Set defaults for legacy entries
-    if 'mood' not in entry_doc:
-        entry_doc['mood'] = 'neutral'
-    if 'tags' not in entry_doc:
-        entry_doc['tags'] = []
-    if 'image_url' not in entry_doc:
-        entry_doc['image_url'] = None
-    
-    return EntryResponse(**entry_doc)
+    return _entry_to_response(entry_doc)
 
 @api_router.put("/entries/{entry_id}", response_model=EntryResponse)
 async def update_entry(
@@ -397,6 +399,13 @@ async def update_entry(
         update_data['image_url'] = entry_data.image_url
     if entry_data.tags is not None:
         update_data['tags'] = entry_data.tags
+    # Handle password update
+    if entry_data.password is not None:
+        if entry_data.password == '':
+            # Empty string means remove password
+            update_data['password_hash'] = None
+        else:
+            update_data['password_hash'] = hash_password(entry_data.password)
     
     if update_data:
         update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
@@ -407,22 +416,7 @@ async def update_entry(
     
     # Fetch updated entry
     updated_entry = await db.entries.find_one({"id": entry_id}, {"_id": 0})
-    
-    # Convert ISO strings to datetime
-    if isinstance(updated_entry['created_at'], str):
-        updated_entry['created_at'] = datetime.fromisoformat(updated_entry['created_at'])
-    if isinstance(updated_entry['updated_at'], str):
-        updated_entry['updated_at'] = datetime.fromisoformat(updated_entry['updated_at'])
-    
-    # Set defaults for legacy entries
-    if 'mood' not in updated_entry:
-        updated_entry['mood'] = 'neutral'
-    if 'tags' not in updated_entry:
-        updated_entry['tags'] = []
-    if 'image_url' not in updated_entry:
-        updated_entry['image_url'] = None
-    
-    return EntryResponse(**updated_entry)
+    return _entry_to_response(updated_entry)
 
 @api_router.delete("/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_entry(entry_id: str, current_user: User = Depends(get_current_user)):
@@ -444,6 +438,125 @@ async def delete_entry(entry_id: str, current_user: User = Depends(get_current_u
     
     await db.entries.delete_one({"id": entry_id})
     return None
+
+# ===========================
+# ENTRY EXTRAS: UNLOCK, SHARE, AI INSIGHTS
+# ===========================
+
+class UnlockRequest(BaseModel):
+    password: str
+
+@api_router.post("/entries/{entry_id}/unlock")
+async def unlock_entry(entry_id: str, req: UnlockRequest, current_user: User = Depends(get_current_user)):
+    """Unlock a password-protected entry and return full content"""
+    entry_doc = await db.entries.find_one({"id": entry_id}, {"_id": 0})
+    
+    if not entry_doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+    
+    if entry_doc['user_id'] != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    
+    if not entry_doc.get('password_hash'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Entry is not password protected")
+    
+    if not verify_password(req.password, entry_doc['password_hash']):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
+    
+    # Return full content
+    if isinstance(entry_doc.get('created_at'), str):
+        entry_doc['created_at'] = datetime.fromisoformat(entry_doc['created_at'])
+    if isinstance(entry_doc.get('updated_at'), str):
+        entry_doc['updated_at'] = datetime.fromisoformat(entry_doc['updated_at'])
+    
+    return {
+        "id": entry_doc['id'],
+        "content": entry_doc.get('content', ''),
+        "image_url": entry_doc.get('image_url'),
+        "title": entry_doc['title'],
+        "mood": entry_doc.get('mood', 'neutral'),
+        "tags": entry_doc.get('tags', []),
+        "created_at": entry_doc['created_at'],
+        "updated_at": entry_doc['updated_at'],
+    }
+
+@api_router.post("/entries/{entry_id}/share")
+async def create_share_link(entry_id: str, current_user: User = Depends(get_current_user)):
+    """Generate a public share token for an entry"""
+    entry_doc = await db.entries.find_one({"id": entry_id}, {"_id": 0})
+    
+    if not entry_doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+    
+    if entry_doc['user_id'] != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    
+    if entry_doc.get('password_hash'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot share a password-protected entry")
+    
+    # Generate share token if not exists
+    share_token = entry_doc.get('share_token')
+    if not share_token:
+        share_token = str(uuid.uuid4())
+        await db.entries.update_one(
+            {"id": entry_id},
+            {"$set": {"share_token": share_token}}
+        )
+    
+    return {"share_token": share_token, "entry_id": entry_id}
+
+@api_router.delete("/entries/{entry_id}/share", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_share_link(entry_id: str, current_user: User = Depends(get_current_user)):
+    """Revoke a share link"""
+    entry_doc = await db.entries.find_one({"id": entry_id}, {"_id": 0})
+    
+    if not entry_doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+    
+    if entry_doc['user_id'] != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    
+    await db.entries.update_one(
+        {"id": entry_id},
+        {"$set": {"share_token": None}}
+    )
+    return None
+
+@api_router.get("/shared/{share_token}")
+async def get_shared_entry(share_token: str):
+    """Public endpoint to view a shared entry - no auth required"""
+    entry_doc = await db.entries.find_one({"share_token": share_token}, {"_id": 0})
+    
+    if not entry_doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared entry not found or link has been revoked")
+    
+    # Also fetch the author's email (masked)
+    user_doc = await db.users.find_one({"id": entry_doc['user_id']}, {"_id": 0})
+    author_email = user_doc['email'] if user_doc else 'anonymous'
+    # Mask the email: john@example.com -> jo***@example.com
+    if '@' in author_email:
+        local, domain = author_email.split('@', 1)
+        if len(local) > 2:
+            masked = local[:2] + '*' * (len(local) - 2)
+        else:
+            masked = local[0] + '*' * (len(local) - 1) if local else '*'
+        author_email = f"{masked}@{domain}"
+    
+    if isinstance(entry_doc.get('created_at'), str):
+        entry_doc['created_at'] = datetime.fromisoformat(entry_doc['created_at'])
+    if isinstance(entry_doc.get('updated_at'), str):
+        entry_doc['updated_at'] = datetime.fromisoformat(entry_doc['updated_at'])
+    
+    return {
+        "id": entry_doc['id'],
+        "title": entry_doc['title'],
+        "content": entry_doc.get('content', ''),
+        "mood": entry_doc.get('mood', 'neutral'),
+        "image_url": entry_doc.get('image_url'),
+        "tags": entry_doc.get('tags', []),
+        "author": author_email,
+        "created_at": entry_doc['created_at'],
+    }
 
 # ===========================
 # ADMIN ROUTES
@@ -667,6 +780,75 @@ async def get_user_analytics(current_user: User = Depends(get_current_user)):
         "mood_timeline": mood_timeline,
         "top_tags": top_tags,
     }
+
+# ===========================
+# AI INSIGHTS (Sprint 5 Bonus)
+# ===========================
+
+@api_router.post("/insights/ai")
+async def get_ai_insights(current_user: User = Depends(get_current_user)):
+    """Generate AI-powered emotional insights from user's recent diary entries using Claude"""
+    # Fetch the last 10 entries (unlocked ones only for privacy)
+    entries = await db.entries.find(
+        {"user_id": current_user.id, "password_hash": {"$in": [None, ""]}},
+        {"_id": 0, "title": 1, "content": 1, "mood": 1, "created_at": 1}
+    ).sort("created_at", -1).limit(10).to_list(10)
+    
+    if not entries:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Write a few diary entries first to get personalized insights."
+        )
+    
+    # Format entries for the AI
+    entries_text = ""
+    mood_counts = {}
+    for entry in entries:
+        mood = entry.get('mood', 'neutral')
+        mood_counts[mood] = mood_counts.get(mood, 0) + 1
+        date_str = entry['created_at'][:10] if isinstance(entry['created_at'], str) else str(entry['created_at'])[:10]
+        entries_text += f"\n[{date_str} | mood: {mood}] {entry['title']}\n{entry['content'][:500]}\n"
+    
+    dominant_mood = max(mood_counts, key=mood_counts.get) if mood_counts else 'neutral'
+    
+    system_message = """You are a warm, empathetic wellness companion helping someone reflect on their diary. 
+Analyze their recent entries and provide thoughtful, supportive insights about:
+1. Emotional patterns you notice (without being clinical or diagnostic)
+2. Positive strengths and growth moments
+3. One gentle, actionable suggestion for wellness
+
+Write in a warm, personal tone - like a caring friend. Use "you" language. Keep it to 150-180 words total.
+Do not give medical advice. Do not use bullet points or headers - write as flowing, warm prose.
+End with an encouraging note."""
+    
+    user_prompt = f"""Here are my last {len(entries)} diary entries. My dominant mood has been '{dominant_mood}'.
+
+{entries_text}
+
+Please share your gentle observations and encouragement."""
+    
+    try:
+        chat = LlmChat(
+            api_key=os.environ['EMERGENT_LLM_KEY'],
+            session_id=f"insights-{current_user.id}-{datetime.now(timezone.utc).timestamp()}",
+            system_message=system_message
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        
+        response = await chat.send_message(UserMessage(text=user_prompt))
+        
+        return {
+            "insight": response,
+            "entries_analyzed": len(entries),
+            "dominant_mood": dominant_mood,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"AI insights error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not generate insights right now. Please try again."
+        )
+
 
 
 

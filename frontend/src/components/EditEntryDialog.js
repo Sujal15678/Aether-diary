@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, Edit3 } from 'lucide-react';
+import { X, Loader2, Edit3, Lock, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { MoodPicker } from '@/components/MoodPicker';
 import { ImageUpload } from '@/components/ImageUpload';
@@ -17,14 +17,20 @@ export const EditEntryDialog = ({ open, onOpenChange, entry, onEntryUpdated }) =
   const [mood, setMood] = useState('neutral');
   const [imageUrl, setImageUrl] = useState(null);
   const [tags, setTags] = useState([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordAction, setPasswordAction] = useState('keep'); // 'keep', 'set', 'remove'
 
   useEffect(() => {
     if (entry) {
       setTitle(entry.title);
-      setContent(entry.content);
+      setContent(entry.content || '');
       setMood(entry.mood || 'neutral');
       setImageUrl(entry.image_url || null);
       setTags(entry.tags || []);
+      setPassword('');
+      setPasswordAction('keep');
+      setShowAdvanced(false);
     }
   }, [entry]);
 
@@ -34,13 +40,24 @@ export const EditEntryDialog = ({ open, onOpenChange, entry, onEntryUpdated }) =
     setLoading(true);
 
     try {
-      const response = await axios.put(`${API}/entries/${entry.id}`, {
+      const payload = {
         title,
-        content,
         mood,
-        image_url: imageUrl,
         tags,
-      });
+      };
+      // Only update content/image if not locked or explicitly set
+      if (!entry.is_locked) {
+        payload.content = content;
+        payload.image_url = imageUrl;
+      }
+      // Handle password changes
+      if (passwordAction === 'set' && password) {
+        payload.password = password;
+      } else if (passwordAction === 'remove') {
+        payload.password = '';
+      }
+
+      const response = await axios.put(`${API}/entries/${entry.id}`, payload);
       toast.success('Entry updated successfully!');
       onOpenChange(false);
       if (onEntryUpdated) onEntryUpdated(response.data);
@@ -143,6 +160,87 @@ export const EditEntryDialog = ({ open, onOpenChange, entry, onEntryUpdated }) =
                     <div>
                       <label className="block text-xs uppercase tracking-[0.15em] text-neutral-500 mb-2">Tags</label>
                       <TagInput value={tags} onChange={setTags} />
+                    </div>
+
+                    {/* Advanced: Password Protection */}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="flex items-center gap-2 text-xs uppercase tracking-[0.15em] text-neutral-500 hover:text-white transition-colors"
+                      >
+                        <Lock className="w-3 h-3" />
+                        Password Protection
+                        <ChevronDown className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                      </button>
+                      <AnimatePresence>
+                        {showAdvanced && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden mt-3"
+                          >
+                            <div className="p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/10 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <Lock className="w-3.5 h-3.5 text-yellow-500" />
+                                <span className="text-xs uppercase tracking-[0.15em] text-yellow-500">
+                                  {entry?.is_locked ? 'Entry is Locked' : 'Lock this Entry'}
+                                </span>
+                              </div>
+
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setPasswordAction('keep')}
+                                  className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                    passwordAction === 'keep'
+                                      ? 'bg-yellow-500/20 border border-yellow-500/40 text-yellow-500'
+                                      : 'bg-white/5 border border-white/10 text-neutral-400'
+                                  }`}
+                                >
+                                  Keep as is
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPasswordAction('set')}
+                                  className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                    passwordAction === 'set'
+                                      ? 'bg-yellow-500/20 border border-yellow-500/40 text-yellow-500'
+                                      : 'bg-white/5 border border-white/10 text-neutral-400'
+                                  }`}
+                                >
+                                  {entry?.is_locked ? 'Change' : 'Set Password'}
+                                </button>
+                                {entry?.is_locked && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPasswordAction('remove')}
+                                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                      passwordAction === 'remove'
+                                        ? 'bg-red-500/20 border border-red-500/40 text-red-400'
+                                        : 'bg-white/5 border border-white/10 text-neutral-400'
+                                    }`}
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+
+                              {passwordAction === 'set' && (
+                                <input
+                                  type="password"
+                                  value={password}
+                                  onChange={(e) => setPassword(e.target.value)}
+                                  placeholder="Enter new password"
+                                  required
+                                  className="w-full bg-[#131822] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-neutral-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none transition-all"
+                                />
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
 

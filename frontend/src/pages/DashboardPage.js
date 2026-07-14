@@ -9,6 +9,8 @@ import { EditEntryDialog } from '@/components/EditEntryDialog';
 import { EntryCard } from '@/components/EntryCard';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 import { SearchBar } from '@/components/SearchBar';
+import { ShareDialog } from '@/components/ShareDialog';
+import { UnlockDialog } from '@/components/UnlockDialog';
 import { Toaster, toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -134,6 +136,8 @@ export const DashboardPage = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
 
   // Search & Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -214,6 +218,33 @@ export const DashboardPage = () => {
     } finally {
       setDeleteLoading(false);
     }
+  };
+
+  const handleShare = (entry) => {
+    setSelectedEntry(entry);
+    setShareDialogOpen(true);
+  };
+
+  const handleUnlock = (entry) => {
+    setSelectedEntry(entry);
+    setUnlockDialogOpen(true);
+  };
+
+  const handleUnlockSuccess = (unlockedData) => {
+    // Show a temporary card with unlocked content
+    const unlockedEntry = {
+      ...selectedEntry,
+      content: unlockedData.content,
+      image_url: unlockedData.image_url,
+      is_locked: false,
+      _tempUnlocked: true,
+    };
+    setEntries(entries.map(e => e.id === unlockedEntry.id ? unlockedEntry : e));
+    toast.success('Entry unlocked - visible until refresh');
+  };
+
+  const handleShareUpdated = (updatedEntry) => {
+    setEntries(entries.map(e => e.id === updatedEntry.id ? updatedEntry : e));
   };
 
   const hasFilters = searchQuery || (moodFilter && moodFilter !== 'all');
@@ -446,6 +477,8 @@ export const DashboardPage = () => {
                   index={index}
                   onEdit={handleEdit}
                   onDelete={handleDeleteClick}
+                  onShare={handleShare}
+                  onUnlock={handleUnlock}
                 />
               ))}
             </AnimatePresence>
@@ -470,6 +503,18 @@ export const DashboardPage = () => {
         onOpenChange={setDeleteDialogOpen}
         onConfirm={handleDeleteConfirm}
         loading={deleteLoading}
+      />
+      <ShareDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        entry={selectedEntry}
+        onShareUpdated={handleShareUpdated}
+      />
+      <UnlockDialog
+        open={unlockDialogOpen}
+        onOpenChange={setUnlockDialogOpen}
+        entry={selectedEntry}
+        onUnlocked={handleUnlockSuccess}
       />
     </div>
   );

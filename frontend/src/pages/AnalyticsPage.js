@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
   BookOpen, ChevronLeft, LogOut, ChevronDown, Flame, Calendar,
-  BarChart3, TrendingUp, Hash, Award, Sparkles, Activity,
+  BarChart3, TrendingUp, Hash, Award, Sparkles, Activity, Brain, Loader2, RefreshCw,
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip,
@@ -61,6 +61,21 @@ export const AnalyticsPage = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [aiInsight, setAiInsight] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const fetchAIInsight = async () => {
+    setAiLoading(true);
+    try {
+      const response = await axios.post(`${API}/insights/ai`);
+      setAiInsight(response.data);
+      toast.success('AI insight generated!');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to generate insight');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const fetchAnalytics = async () => {
     try {
@@ -319,6 +334,93 @@ export const AnalyticsPage = () => {
             subtitle="Personal record"
           />
         </div>
+
+        {/* AI Insights Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.45 }}
+          className="relative mb-8"
+          data-testid="ai-insights-card"
+        >
+          <div className="absolute -inset-1 rounded-2xl blur-2xl opacity-30 bg-gradient-to-r from-purple-500 via-[#00E5FF] to-purple-500" />
+          <div className="relative bg-gradient-to-br from-[#0B0E14] to-[#131822] border border-white/10 rounded-2xl p-6 overflow-hidden">
+            {/* Background icon */}
+            <div className="absolute -top-8 -right-8 opacity-5">
+              <Brain className="w-48 h-48 text-[#00E5FF]" />
+            </div>
+
+            <div className="relative">
+              <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500/20 to-[#00E5FF]/20 border border-[#00E5FF]/30 flex items-center justify-center">
+                    <Brain className="w-5 h-5 text-[#00E5FF]" />
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-2xl font-semibold text-white">AI Reflection</h3>
+                    <p className="text-xs text-neutral-500 uppercase tracking-[0.15em] mt-0.5">Powered by Claude</p>
+                  </div>
+                </div>
+                {aiInsight && (
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={fetchAIInsight}
+                    disabled={aiLoading}
+                    data-testid="regenerate-ai-button"
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-neutral-300 hover:bg-[#00E5FF]/10 hover:border-[#00E5FF]/30 hover:text-[#00E5FF] transition-all text-xs font-medium"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${aiLoading ? 'animate-spin' : ''}`} />
+                    Regenerate
+                  </motion.button>
+                )}
+              </div>
+
+              {aiInsight ? (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="space-y-4"
+                >
+                  <p className="font-serif text-base sm:text-lg text-neutral-200 leading-relaxed whitespace-pre-wrap italic">
+                    "{aiInsight.insight}"
+                  </p>
+                  <div className="flex items-center gap-4 pt-2 text-xs text-neutral-500 uppercase tracking-[0.15em]">
+                    <span>Analyzed {aiInsight.entries_analyzed} entries</span>
+                    <span className="w-1 h-1 rounded-full bg-neutral-700" />
+                    <span>Dominant mood: {aiInsight.dominant_mood}</span>
+                  </div>
+                </motion.div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-sm text-neutral-400 mb-5 max-w-lg mx-auto leading-relaxed">
+                    Let Claude AI reflect on your recent journal entries and offer warm, thoughtful insights about your emotional patterns.
+                  </p>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={fetchAIInsight}
+                    disabled={aiLoading}
+                    data-testid="generate-ai-insight-button"
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-purple-500 to-[#00E5FF] text-black font-semibold text-sm transition-all shadow-[0_0_30px_rgba(0,229,255,0.3)] disabled:opacity-50"
+                  >
+                    {aiLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Reflecting...
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="w-4 h-4" />
+                        Get AI Reflection
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
