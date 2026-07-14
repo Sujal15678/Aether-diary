@@ -5,6 +5,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import { AuthPage } from "@/pages/AuthPage";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
 
 function App() {
   return (
@@ -19,6 +20,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <DashboardPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <PrivateRoute>
+                  <AdminDashboardPage />
                 </PrivateRoute>
               }
             />

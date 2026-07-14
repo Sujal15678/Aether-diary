@@ -69,10 +69,16 @@ class TokenResponse(BaseModel):
 class EntryCreate(BaseModel):
     title: str
     content: str
+    mood: Optional[str] = "neutral"  # happy, calm, neutral, sad, anxious
+    image_url: Optional[str] = None  # base64 image
+    tags: Optional[List[str]] = []
 
 class EntryUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
+    mood: Optional[str] = None
+    image_url: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 class Entry(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -81,6 +87,9 @@ class Entry(BaseModel):
     user_id: str
     title: str
     content: str
+    mood: str = "neutral"
+    image_url: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -89,8 +98,19 @@ class EntryResponse(BaseModel):
     user_id: str
     title: str
     content: str
+    mood: str
+    image_url: Optional[str] = None
+    tags: List[str] = []
     created_at: datetime
     updated_at: datetime
+
+class AdminStats(BaseModel):
+    total_users: int
+    total_entries: int
+    total_admins: int
+    entries_by_mood: dict
+    recent_users: List[UserResponse]
+    entries_last_7_days: int
 
 # ===========================
 # PASSWORD & JWT UTILITIES
@@ -250,7 +270,10 @@ async def create_entry(entry_data: EntryCreate, current_user: User = Depends(get
     new_entry = Entry(
         user_id=current_user.id,
         title=entry_data.title,
-        content=entry_data.content
+        content=entry_data.content,
+        mood=entry_data.mood or "neutral",
+        image_url=entry_data.image_url,
+        tags=entry_data.tags or []
     )
     
     # Convert to dict and serialize datetimes
@@ -263,19 +286,46 @@ async def create_entry(entry_data: EntryCreate, current_user: User = Depends(get
     return EntryResponse(**new_entry.model_dump())
 
 @api_router.get("/entries", response_model=List[EntryResponse])
-async def get_entries(current_user: User = Depends(get_current_user)):
-    """Get all diary entries for the current user"""
-    entries = await db.entries.find(
-        {"user_id": current_user.id},
-        {"_id": 0}
-    ).sort("created_at", -1).to_list(1000)
+async def get_entries(
+    search: Optional[str] = None,
+    mood: Optional[str] = None,
+    tag: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Get all diary entries for the current user with optional search and filters"""
+    query = {"user_id": current_user.id}
     
-    # Convert ISO strings back to datetime
+    # Search across title, content
+    if search:
+        query["$or"] = [
+            {"title": {"$regex": search, "$options": "i"}},
+            {"content": {"$regex": search, "$options": "i"}},
+            {"tags": {"$regex": search, "$options": "i"}}
+        ]
+    
+    # Filter by mood
+    if mood and mood != "all":
+        query["mood"] = mood
+    
+    # Filter by tag
+    if tag:
+        query["tags"] = tag
+    
+    entries = await db.entries.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Convert ISO strings back to datetime and handle legacy entries
     for entry in entries:
         if isinstance(entry['created_at'], str):
             entry['created_at'] = datetime.fromisoformat(entry['created_at'])
         if isinstance(entry['updated_at'], str):
             entry['updated_at'] = datetime.fromisoformat(entry['updated_at'])
+        # Set defaults for legacy entries
+        if 'mood' not in entry:
+            entry['mood'] = 'neutral'
+        if 'tags' not in entry:
+            entry['tags'] = []
+        if 'image_url' not in entry:
+            entry['image_url'] = None
     
     return entries
 
@@ -302,6 +352,14 @@ async def get_entry(entry_id: str, current_user: User = Depends(get_current_user
         entry_doc['created_at'] = datetime.fromisoformat(entry_doc['created_at'])
     if isinstance(entry_doc['updated_at'], str):
         entry_doc['updated_at'] = datetime.fromisoformat(entry_doc['updated_at'])
+    
+    # Set defaults for legacy entries
+    if 'mood' not in entry_doc:
+        entry_doc['mood'] = 'neutral'
+    if 'tags' not in entry_doc:
+        entry_doc['tags'] = []
+    if 'image_url' not in entry_doc:
+        entry_doc['image_url'] = None
     
     return EntryResponse(**entry_doc)
 
@@ -333,6 +391,12 @@ async def update_entry(
         update_data['title'] = entry_data.title
     if entry_data.content is not None:
         update_data['content'] = entry_data.content
+    if entry_data.mood is not None:
+        update_data['mood'] = entry_data.mood
+    if entry_data.image_url is not None:
+        update_data['image_url'] = entry_data.image_url
+    if entry_data.tags is not None:
+        update_data['tags'] = entry_data.tags
     
     if update_data:
         update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
@@ -349,6 +413,14 @@ async def update_entry(
         updated_entry['created_at'] = datetime.fromisoformat(updated_entry['created_at'])
     if isinstance(updated_entry['updated_at'], str):
         updated_entry['updated_at'] = datetime.fromisoformat(updated_entry['updated_at'])
+    
+    # Set defaults for legacy entries
+    if 'mood' not in updated_entry:
+        updated_entry['mood'] = 'neutral'
+    if 'tags' not in updated_entry:
+        updated_entry['tags'] = []
+    if 'image_url' not in updated_entry:
+        updated_entry['image_url'] = None
     
     return EntryResponse(**updated_entry)
 
@@ -372,6 +444,82 @@ async def delete_entry(entry_id: str, current_user: User = Depends(get_current_u
     
     await db.entries.delete_one({"id": entry_id})
     return None
+
+# ===========================
+# ADMIN ROUTES
+# ===========================
+
+@api_router.get("/admin/stats", response_model=AdminStats)
+async def get_admin_stats(current_admin: User = Depends(get_current_admin)):
+    """Get admin dashboard statistics"""
+    # Total users
+    total_users = await db.users.count_documents({})
+    
+    # Total admins
+    total_admins = await db.users.count_documents({"role": "admin"})
+    
+    # Total entries
+    total_entries = await db.entries.count_documents({})
+    
+    # Entries by mood
+    mood_pipeline = [
+        {"$group": {"_id": "$mood", "count": {"$sum": 1}}}
+    ]
+    mood_results = await db.entries.aggregate(mood_pipeline).to_list(100)
+    entries_by_mood = {}
+    for item in mood_results:
+        mood_key = item['_id'] or 'neutral'
+        entries_by_mood[mood_key] = item['count']
+    
+    # Recent users (last 5)
+    recent_users_docs = await db.users.find(
+        {}, {"_id": 0}
+    ).sort("created_at", -1).limit(5).to_list(5)
+    
+    recent_users = []
+    for u in recent_users_docs:
+        if isinstance(u['created_at'], str):
+            u['created_at'] = datetime.fromisoformat(u['created_at'])
+        recent_users.append(UserResponse(
+            id=u['id'],
+            email=u['email'],
+            role=u.get('role', 'user'),
+            created_at=u['created_at']
+        ))
+    
+    # Entries in last 7 days
+    seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    entries_last_7_days = await db.entries.count_documents({
+        "created_at": {"$gte": seven_days_ago}
+    })
+    
+    return AdminStats(
+        total_users=total_users,
+        total_entries=total_entries,
+        total_admins=total_admins,
+        entries_by_mood=entries_by_mood,
+        recent_users=recent_users,
+        entries_last_7_days=entries_last_7_days
+    )
+
+@api_router.get("/admin/users", response_model=List[UserResponse])
+async def get_all_users(current_admin: User = Depends(get_current_admin)):
+    """Get all users (admin only)"""
+    users_docs = await db.users.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    users = []
+    for u in users_docs:
+        if isinstance(u['created_at'], str):
+            u['created_at'] = datetime.fromisoformat(u['created_at'])
+        users.append(UserResponse(
+            id=u['id'],
+            email=u['email'],
+            role=u.get('role', 'user'),
+            created_at=u['created_at']
+        ))
+    
+    return users
+
 
 
 # ===========================

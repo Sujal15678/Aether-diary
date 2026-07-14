@@ -1,34 +1,54 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, LogOut, Plus, Sparkles, Feather, ChevronDown } from 'lucide-react';
+import { BookOpen, LogOut, Plus, Sparkles, Feather, ChevronDown, Shield, Search as SearchIcon } from 'lucide-react';
 import { CreateEntryDialog } from '@/components/CreateEntryDialog';
 import { EditEntryDialog } from '@/components/EditEntryDialog';
 import { EntryCard } from '@/components/EntryCard';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
+import { SearchBar } from '@/components/SearchBar';
 import { Toaster, toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 // Empty State with Floating Diaries
-const EmptyState = ({ onCreate }) => {
+const EmptyState = ({ onCreate, hasFilters }) => {
   const diaries = [
     { delay: 0, duration: 5, x: -80, rotate: -12 },
     { delay: 0.5, duration: 6, x: 80, rotate: 8 },
     { delay: 1, duration: 5.5, x: 0, rotate: 0 },
   ];
 
+  if (hasFilters) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="text-center py-20"
+      >
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-[#00E5FF]/10 border border-[#00E5FF]/20 mb-6">
+          <SearchIcon className="w-9 h-9 text-[#00E5FF]" />
+        </div>
+        <h3 className="font-serif text-3xl font-semibold text-white mb-3">
+          No entries found
+        </h3>
+        <p className="text-neutral-400">
+          Try adjusting your search or filters to find what you're looking for.
+        </p>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6 }}
-      className="relative min-h-[60vh] flex flex-col items-center justify-center py-16"
+      className="relative min-h-[50vh] flex flex-col items-center justify-center py-16"
     >
-      {/* Floating diaries visualization */}
       <div className="relative h-56 w-full max-w-lg mb-12">
         {diaries.map((diary, i) => (
           <motion.div
@@ -113,29 +133,61 @@ export const DashboardPage = () => {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+
+  // Search & Filter states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [moodFilter, setMoodFilter] = useState('all');
+  const [totalCount, setTotalCount] = useState(0);
 
   const handleLogout = () => {
     logout();
     navigate('/auth');
   };
 
-  const fetchEntries = async () => {
+  const fetchEntries = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API}/entries`);
+      const params = new URLSearchParams();
+      if (searchQuery) params.append('search', searchQuery);
+      if (moodFilter && moodFilter !== 'all') params.append('mood', moodFilter);
+
+      const url = params.toString() ? `${API}/entries?${params}` : `${API}/entries`;
+      const response = await axios.get(url);
       setEntries(response.data);
     } catch (error) {
       toast.error('Failed to load entries');
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery, moodFilter]);
 
-  useEffect(() => {
-    fetchEntries();
+  // Fetch total count separately for the header (unfiltered)
+  const fetchTotalCount = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API}/entries`);
+      setTotalCount(response.data.length);
+    } catch (error) {
+      // Silent fail
+    }
   }, []);
 
-  const handleEntryCreated = (newEntry) => setEntries([newEntry, ...entries]);
+  useEffect(() => {
+    fetchTotalCount();
+  }, [fetchTotalCount]);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchEntries();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [fetchEntries]);
+
+  const handleEntryCreated = (newEntry) => {
+    setEntries([newEntry, ...entries]);
+    setTotalCount(totalCount + 1);
+  };
   const handleEntryUpdated = (updatedEntry) => {
     setEntries(entries.map(e => e.id === updatedEntry.id ? updatedEntry : e));
   };
@@ -153,6 +205,7 @@ export const DashboardPage = () => {
     try {
       await axios.delete(`${API}/entries/${selectedEntry.id}`);
       setEntries(entries.filter(e => e.id !== selectedEntry.id));
+      setTotalCount(totalCount - 1);
       toast.success('Entry deleted');
       setDeleteDialogOpen(false);
       setSelectedEntry(null);
@@ -163,15 +216,16 @@ export const DashboardPage = () => {
     }
   };
 
+  const hasFilters = searchQuery || (moodFilter && moodFilter !== 'all');
+
   return (
     <div className="min-h-screen bg-[#030508] relative overflow-hidden">
-      {/* Ambient background gradients */}
+      {/* Ambient backgrounds */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[radial-gradient(circle,_rgba(0,229,255,0.08),_transparent_70%)]" />
         <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[radial-gradient(circle,_rgba(0,229,255,0.05),_transparent_70%)]" />
       </div>
 
-      {/* Noise overlay */}
       <div className="fixed inset-0 opacity-[0.02] pointer-events-none" style={{
         backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`
       }} />
@@ -208,8 +262,33 @@ export const DashboardPage = () => {
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-3"
+              className="flex items-center gap-2"
             >
+              {/* Search toggle */}
+              <button
+                onClick={() => setShowSearch(!showSearch)}
+                data-testid="toggle-search-button"
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                  showSearch
+                    ? 'bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/30'
+                    : 'bg-white/5 border border-white/5 text-neutral-400 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <SearchIcon className="w-4 h-4" />
+              </button>
+
+              {/* Admin link */}
+              {user?.role === 'admin' && (
+                <button
+                  onClick={() => navigate('/admin')}
+                  data-testid="admin-link"
+                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 hover:border-purple-500/40 transition-all text-xs font-medium"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  Admin
+                </button>
+              )}
+
               {/* User menu */}
               <div className="relative">
                 <button
@@ -220,17 +299,14 @@ export const DashboardPage = () => {
                   <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#00E5FF] to-[#00B8D4] flex items-center justify-center text-black text-xs font-semibold">
                     {user?.email?.[0]?.toUpperCase()}
                   </div>
-                  <span className="text-sm text-neutral-300 hidden sm:inline">{user?.email}</span>
+                  <span className="text-sm text-neutral-300 hidden sm:inline max-w-[150px] truncate">{user?.email}</span>
                   <ChevronDown className="w-3.5 h-3.5 text-neutral-500" />
                 </button>
 
                 <AnimatePresence>
                   {userMenuOpen && (
                     <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setUserMenuOpen(false)}
-                      />
+                      <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
                       <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -239,11 +315,20 @@ export const DashboardPage = () => {
                         className="absolute right-0 mt-2 w-64 rounded-xl bg-[#0B0E14]/95 backdrop-blur-xl border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] overflow-hidden z-50"
                       >
                         <div className="p-4 border-b border-white/5">
-                          <div className="text-sm text-white font-medium">{user?.email}</div>
+                          <div className="text-sm text-white font-medium truncate">{user?.email}</div>
                           {user?.role === 'admin' && (
                             <div className="text-xs text-[#00E5FF] mt-1 uppercase tracking-wider">Administrator</div>
                           )}
                         </div>
+                        {user?.role === 'admin' && (
+                          <button
+                            onClick={() => { setUserMenuOpen(false); navigate('/admin'); }}
+                            className="w-full px-4 py-3 flex items-center gap-3 text-sm text-neutral-300 hover:bg-purple-500/10 hover:text-purple-400 transition-all sm:hidden"
+                          >
+                            <Shield className="w-4 h-4" />
+                            Admin Panel
+                          </button>
+                        )}
                         <button
                           onClick={handleLogout}
                           data-testid="logout-button"
@@ -269,14 +354,14 @@ export const DashboardPage = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="mb-12"
+          className="mb-8"
         >
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#00E5FF]/10 border border-[#00E5FF]/20 mb-4">
                 <div className="w-1.5 h-1.5 rounded-full bg-[#00E5FF] animate-pulse" />
                 <span className="text-xs uppercase tracking-[0.15em] text-[#00E5FF]">
-                  {entries.length} {entries.length === 1 ? 'Entry' : 'Entries'}
+                  {totalCount} {totalCount === 1 ? 'Entry' : 'Entries'}
                 </span>
               </div>
               <h1 className="font-serif text-5xl sm:text-6xl font-semibold tracking-tight gradient-text mb-2">
@@ -287,7 +372,7 @@ export const DashboardPage = () => {
               </p>
             </div>
 
-            {entries.length > 0 && (
+            {totalCount > 0 && (
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -301,9 +386,27 @@ export const DashboardPage = () => {
             )}
           </div>
 
-          {/* Decorative line */}
           <div className="mt-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
         </motion.div>
+
+        {/* Search bar */}
+        <AnimatePresence>
+          {(showSearch || hasFilters) && totalCount > 0 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mb-8 overflow-hidden"
+            >
+              <SearchBar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                moodFilter={moodFilter}
+                onMoodFilterChange={setMoodFilter}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Entries List or Empty State */}
         {loading ? (
@@ -315,13 +418,9 @@ export const DashboardPage = () => {
             />
           </div>
         ) : entries.length === 0 ? (
-          <EmptyState onCreate={() => setCreateDialogOpen(true)} />
+          <EmptyState onCreate={() => setCreateDialogOpen(true)} hasFilters={hasFilters} />
         ) : (
-          <motion.div
-            layout
-            className="space-y-5"
-            data-testid="entries-list"
-          >
+          <motion.div layout className="space-y-5" data-testid="entries-list">
             <AnimatePresence mode="popLayout">
               {entries.map((entry, index) => (
                 <EntryCard
