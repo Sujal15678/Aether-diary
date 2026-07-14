@@ -6,6 +6,7 @@ import { PrivateRoute } from "@/components/PrivateRoute";
 import { AuthPage } from "@/pages/AuthPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { AdminDashboardPage } from "@/pages/AdminDashboardPage";
+import { AnalyticsPage } from "@/pages/AnalyticsPage";
 
 function App() {
   return (
@@ -28,6 +29,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <AdminDashboardPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/insights"
+              element={
+                <PrivateRoute>
+                  <AnalyticsPage />
                 </PrivateRoute>
               }
             />

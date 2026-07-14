@@ -520,6 +520,154 @@ async def get_all_users(current_admin: User = Depends(get_current_admin)):
     
     return users
 
+# ===========================
+# USER ANALYTICS ROUTES (Sprint 5)
+# ===========================
+
+@api_router.get("/analytics/me")
+async def get_user_analytics(current_user: User = Depends(get_current_user)):
+    """Get personal analytics for the current user - mood trends, streaks, stats"""
+    user_id = current_user.id
+    
+    # Total entries
+    total_entries = await db.entries.count_documents({"user_id": user_id})
+    
+    # Entries by mood
+    mood_pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$group": {"_id": "$mood", "count": {"$sum": 1}}}
+    ]
+    mood_results = await db.entries.aggregate(mood_pipeline).to_list(100)
+    mood_distribution = {}
+    for item in mood_results:
+        mood_key = item['_id'] or 'neutral'
+        mood_distribution[mood_key] = item['count']
+    
+    # Get all entries sorted by date for streak calculation and timeline
+    all_entries = await db.entries.find(
+        {"user_id": user_id},
+        {"_id": 0, "created_at": 1, "mood": 1}
+    ).sort("created_at", -1).to_list(10000)
+    
+    # Calculate streaks
+    current_streak = 0
+    longest_streak = 0
+    unique_dates = set()
+    
+    for entry in all_entries:
+        created_at = entry['created_at']
+        if isinstance(created_at, str):
+            dt = datetime.fromisoformat(created_at)
+        else:
+            dt = created_at
+        # Store date only (ignore time)
+        date_only = dt.date()
+        unique_dates.add(date_only)
+    
+    # Sort dates descending
+    sorted_dates = sorted(unique_dates, reverse=True)
+    today = datetime.now(timezone.utc).date()
+    yesterday = today - timedelta(days=1)
+    
+    # Current streak - consecutive days ending today or yesterday
+    if sorted_dates:
+        if sorted_dates[0] == today or sorted_dates[0] == yesterday:
+            current_streak = 1
+            for i in range(1, len(sorted_dates)):
+                diff = (sorted_dates[i - 1] - sorted_dates[i]).days
+                if diff == 1:
+                    current_streak += 1
+                else:
+                    break
+    
+    # Longest streak - iterate through all dates
+    if sorted_dates:
+        temp_streak = 1
+        longest_streak = 1
+        for i in range(1, len(sorted_dates)):
+            diff = (sorted_dates[i - 1] - sorted_dates[i]).days
+            if diff == 1:
+                temp_streak += 1
+                longest_streak = max(longest_streak, temp_streak)
+            else:
+                temp_streak = 1
+    
+    # Mood timeline - last 30 days
+    thirty_days_ago = today - timedelta(days=30)
+    mood_score_map = {
+        'happy': 5,
+        'calm': 4,
+        'neutral': 3,
+        'anxious': 2,
+        'sad': 1,
+    }
+    
+    # Group entries by date
+    date_mood_map = {}
+    for entry in all_entries:
+        created_at = entry['created_at']
+        if isinstance(created_at, str):
+            dt = datetime.fromisoformat(created_at)
+        else:
+            dt = created_at
+        date_only = dt.date()
+        
+        if date_only < thirty_days_ago:
+            continue
+        
+        mood = entry.get('mood', 'neutral')
+        score = mood_score_map.get(mood, 3)
+        
+        date_key = date_only.isoformat()
+        if date_key not in date_mood_map:
+            date_mood_map[date_key] = []
+        date_mood_map[date_key].append(score)
+    
+    # Build timeline
+    mood_timeline = []
+    for i in range(30):
+        target_date = thirty_days_ago + timedelta(days=i)
+        date_key = target_date.isoformat()
+        scores = date_mood_map.get(date_key, [])
+        avg_score = round(sum(scores) / len(scores), 1) if scores else None
+        mood_timeline.append({
+            "date": date_key,
+            "score": avg_score,
+            "entries": len(scores),
+        })
+    
+    # Entries this month
+    first_of_month = today.replace(day=1).isoformat()
+    entries_this_month = await db.entries.count_documents({
+        "user_id": user_id,
+        "created_at": {"$gte": first_of_month}
+    })
+    
+    # Top tags
+    tag_pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$unwind": "$tags"},
+        {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 8}
+    ]
+    top_tags_results = await db.entries.aggregate(tag_pipeline).to_list(10)
+    top_tags = [{"tag": item['_id'], "count": item['count']} for item in top_tags_results if item['_id']]
+    
+    # Total unique days written
+    days_written = len(unique_dates)
+    
+    return {
+        "total_entries": total_entries,
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "days_written": days_written,
+        "entries_this_month": entries_this_month,
+        "mood_distribution": mood_distribution,
+        "mood_timeline": mood_timeline,
+        "top_tags": top_tags,
+    }
+
 
 
 # ===========================

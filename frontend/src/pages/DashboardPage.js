@@ -3,7 +3,7 @@ import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, LogOut, Plus, Sparkles, Feather, ChevronDown, Shield, Search as SearchIcon } from 'lucide-react';
+import { BookOpen, LogOut, Plus, Sparkles, Feather, ChevronDown, Shield, Search as SearchIcon, BarChart3 } from 'lucide-react';
 import { CreateEntryDialog } from '@/components/CreateEntryDialog';
 import { EditEntryDialog } from '@/components/EditEntryDialog';
 import { EntryCard } from '@/components/EntryCard';
@@ -277,6 +277,16 @@ export const DashboardPage = () => {
                 <SearchIcon className="w-4 h-4" />
               </button>
 
+              {/* Insights link */}
+              <button
+                onClick={() => navigate('/insights')}
+                data-testid="insights-link"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#00E5FF]/10 border border-[#00E5FF]/20 text-[#00E5FF] hover:bg-[#00E5FF]/20 hover:border-[#00E5FF]/40 transition-all text-xs font-medium"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                Insights
+              </button>
+
               {/* Admin link */}
               {user?.role === 'admin' && (
                 <button
@@ -329,6 +339,13 @@ export const DashboardPage = () => {
                             Admin Panel
                           </button>
                         )}
+                        <button
+                          onClick={() => { setUserMenuOpen(false); navigate('/insights'); }}
+                          className="w-full px-4 py-3 flex items-center gap-3 text-sm text-neutral-300 hover:bg-[#00E5FF]/10 hover:text-[#00E5FF] transition-all sm:hidden"
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                          Insights
+                        </button>
                         <button
                           onClick={handleLogout}
                           data-testid="logout-button"
