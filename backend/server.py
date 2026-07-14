@@ -65,6 +65,33 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: UserResponse
 
+# Entry Models
+class EntryCreate(BaseModel):
+    title: str
+    content: str
+
+class EntryUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+class Entry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    title: str
+    content: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class EntryResponse(BaseModel):
+    id: str
+    user_id: str
+    title: str
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
 # ===========================
 # PASSWORD & JWT UTILITIES
 # ===========================
@@ -212,6 +239,140 @@ async def get_me(current_user: User = Depends(get_current_user)):
         role=current_user.role,
         created_at=current_user.created_at
     )
+
+# ===========================
+# DIARY ENTRY ROUTES
+# ===========================
+
+@api_router.post("/entries", response_model=EntryResponse, status_code=status.HTTP_201_CREATED)
+async def create_entry(entry_data: EntryCreate, current_user: User = Depends(get_current_user)):
+    """Create a new diary entry"""
+    new_entry = Entry(
+        user_id=current_user.id,
+        title=entry_data.title,
+        content=entry_data.content
+    )
+    
+    # Convert to dict and serialize datetimes
+    entry_dict = new_entry.model_dump()
+    entry_dict['created_at'] = entry_dict['created_at'].isoformat()
+    entry_dict['updated_at'] = entry_dict['updated_at'].isoformat()
+    
+    await db.entries.insert_one(entry_dict)
+    
+    return EntryResponse(**new_entry.model_dump())
+
+@api_router.get("/entries", response_model=List[EntryResponse])
+async def get_entries(current_user: User = Depends(get_current_user)):
+    """Get all diary entries for the current user"""
+    entries = await db.entries.find(
+        {"user_id": current_user.id},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
+    
+    # Convert ISO strings back to datetime
+    for entry in entries:
+        if isinstance(entry['created_at'], str):
+            entry['created_at'] = datetime.fromisoformat(entry['created_at'])
+        if isinstance(entry['updated_at'], str):
+            entry['updated_at'] = datetime.fromisoformat(entry['updated_at'])
+    
+    return entries
+
+@api_router.get("/entries/{entry_id}", response_model=EntryResponse)
+async def get_entry(entry_id: str, current_user: User = Depends(get_current_user)):
+    """Get a single diary entry"""
+    entry_doc = await db.entries.find_one({"id": entry_id}, {"_id": 0})
+    
+    if not entry_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entry not found"
+        )
+    
+    # Check ownership
+    if entry_doc['user_id'] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this entry"
+        )
+    
+    # Convert ISO strings to datetime
+    if isinstance(entry_doc['created_at'], str):
+        entry_doc['created_at'] = datetime.fromisoformat(entry_doc['created_at'])
+    if isinstance(entry_doc['updated_at'], str):
+        entry_doc['updated_at'] = datetime.fromisoformat(entry_doc['updated_at'])
+    
+    return EntryResponse(**entry_doc)
+
+@api_router.put("/entries/{entry_id}", response_model=EntryResponse)
+async def update_entry(
+    entry_id: str,
+    entry_data: EntryUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """Update a diary entry"""
+    # Check if entry exists and user owns it
+    entry_doc = await db.entries.find_one({"id": entry_id}, {"_id": 0})
+    
+    if not entry_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entry not found"
+        )
+    
+    if entry_doc['user_id'] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to modify this entry"
+        )
+    
+    # Prepare update data
+    update_data = {}
+    if entry_data.title is not None:
+        update_data['title'] = entry_data.title
+    if entry_data.content is not None:
+        update_data['content'] = entry_data.content
+    
+    if update_data:
+        update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+        await db.entries.update_one(
+            {"id": entry_id},
+            {"$set": update_data}
+        )
+    
+    # Fetch updated entry
+    updated_entry = await db.entries.find_one({"id": entry_id}, {"_id": 0})
+    
+    # Convert ISO strings to datetime
+    if isinstance(updated_entry['created_at'], str):
+        updated_entry['created_at'] = datetime.fromisoformat(updated_entry['created_at'])
+    if isinstance(updated_entry['updated_at'], str):
+        updated_entry['updated_at'] = datetime.fromisoformat(updated_entry['updated_at'])
+    
+    return EntryResponse(**updated_entry)
+
+@api_router.delete("/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_entry(entry_id: str, current_user: User = Depends(get_current_user)):
+    """Delete a diary entry"""
+    # Check if entry exists and user owns it
+    entry_doc = await db.entries.find_one({"id": entry_id}, {"_id": 0})
+    
+    if not entry_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entry not found"
+        )
+    
+    if entry_doc['user_id'] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this entry"
+        )
+    
+    await db.entries.delete_one({"id": entry_id})
+    return None
+
 
 # ===========================
 # TEST ROUTES (from original)
