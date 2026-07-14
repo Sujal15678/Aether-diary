@@ -1,0 +1,117 @@
+{
+  "project_context": {
+    "app_type": "dashboard / saas_app",
+    "theme": "dark_mode_only",
+    "aesthetic": "Luxurious, premium, mysterious, deeply personal but highly modern and dynamic",
+    "core_colors": "Deep Black base with vibrant Cyan accents"
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Playfair Display, serif",
+      "weights": ["400", "500", "600", "700"],
+      "usage_rules": "Use for all major section titles, diary entry titles, and hero text. Apply tight tracking (tracking-tight) to H1-H2. This font establishes the premium, classic journal aesthetic."
+    },
+    "body_and_ui": {
+      "font_family": "Outfit, sans-serif",
+      "weights": ["300", "400", "500"],
+      "usage_rules": "Use for paragraphs, dashboard metrics, buttons, inputs, and meta text (dates, tags, moods). Maintains modern SaaS legibility on dark backgrounds."
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl",
+      "h3": "text-xl sm:text-2xl",
+      "body": "text-base text-neutral-300 leading-relaxed",
+      "caption": "text-sm text-neutral-500 uppercase tracking-[0.2em]"
+    }
+  },
+  "colors": {
+    "backgrounds": {
+      "base": "#030508",
+      "surface_1": "#0B0E14",
+      "surface_2": "#131822",
+      "glass": "bg-[#0B0E14]/70 backdrop-blur-xl"
+    },
+    "accents": {
+      "primary": "#00E5FF",
+      "primary_hover": "#33EEFF",
+      "primary_muted": "rgba(0, 229, 255, 0.15)",
+      "glow": "drop-shadow-[0_0_15px_rgba(0,229,255,0.4)]"
+    },
+    "text": {
+      "primary": "#F8FAFC",
+      "secondary": "#94A3B8",
+      "muted": "#475569"
+    },
+    "mood_colors": {
+      "happy": "#00E5FF",
+      "calm": "#818CF8",
+      "anxious": "#FBBF24",
+      "sad": "#64748B",
+      "angry": "#EF4444"
+    },
+    "gradients": {
+      "primary_text": "bg-gradient-to-r from-white via-white to-[#00E5FF]/80 bg-clip-text text-transparent",
+      "background_glow": "bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-[#00E5FF]/10 via-[#030508] to-[#030508]"
+    }
+  },
+  "visual_enhancers": {
+    "borders": "1px solid border-white/5 or border-[#00E5FF]/20 for active/premium cards.",
+    "shadows": "Ambient glows rather than harsh drop shadows. Example: shadow-[0_4px_30px_rgba(0,229,255,0.05)]",
+    "textures": "Apply a subtle noise overlay (opacity 2-3%) on the main background to prevent digital flatness.",
+    "glassmorphism": "Use on sticky headers, floating menus, and dropdowns. NEVER use fully transparent backgrounds. Always use backdrop blur combined with a semi-solid color."
+  },
+  "layouts_and_grids": {
+    "general": "Generous spacing philosophy. Use p-8 or p-12 for containers. Avoid cramped content.",
+    "dashboard_grid": "Use a dense, high-contrast grid for the dashboard (e.g., grid-cols-1 md:grid-cols-4 gap-6). Prioritize the F-pattern (North Star Metric top-left).",
+    "diary_feed": "Use a masonry or staggered grid for diary entries so they feel organic, personal, and artistic.",
+    "spacing_scale": "p-2, p-4, p-6, p-8, p-12"
+  },
+  "components": {
+    "diary_cards": {
+      "style": "bg-[#0B0E14] border border-white/5 rounded-2xl p-6 overflow-hidden relative group flex flex-col gap-4",
+      "hover_state": "-translate-y-2 border-[#00E5FF]/30 shadow-[0_10px_40px_rgba(0,229,255,0.15)] transition-all duration-500",
+      "content": "Line-clamp for body text, prominent elegant date typography (Playfair Display)."
+    },
+    "buttons": {
+      "primary": "bg-[#00E5FF] text-black font-semibold rounded-full px-8 py-3 hover:bg-[#33EEFF] transition-colors shadow-[0_0_20px_rgba(0,229,255,0.3)] hover:scale-105 active:scale-95 duration-200",
+      "secondary": "bg-transparent border border-white/10 text-white rounded-full px-8 py-3 hover:bg-white/5 hover:border-[#00E5FF]/50 transition-all",
+      "icon_buttons": "rounded-full p-3 bg-white/5 border border-white/5 hover:bg-[#00E5FF]/20 hover:text-[#00E5FF] hover:border-[#00E5FF]/30 transition-all"
+    },
+    "inputs": {
+      "style": "bg-[#131822] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] outline-none transition-all placeholder:text-neutral-600"
+    }
+  },
+  "motion_and_animations": {
+    "moving_diaries_concept": "For the landing page or empty dashboard state, implement an infinite scrolling or gently floating parallax array of abstract diary cards using framer-motion (e.g., animate={{ y: [0, -10, 0] }}).",
+    "card_entrance": "Staggered fade-up for the diary feed. initial={opacity: 0, y: 30}, animate={opacity: 1, y: 0}, transition={staggerChildren: 0.1, duration: 0.6, ease: 'easeOut'}.",
+    "hover_effects": "Fluid micro-interactions on all interactive elements. Cards lift, borders glow cyan.",
+    "page_transitions": "Smooth fade out and in across routes using AnimatePresence."
+  },
+  "accessibility": {
+    "contrast": "Ensure text over cyan backgrounds uses black (#000000) for APCA readability.",
+    "focus_states": "All interactive elements must have a high-contrast focus ring (focus:ring-2 focus:ring-[#00E5FF] focus:ring-offset-2 focus:ring-offset-[#030508]).",
+    "motion": "Respect prefers-reduced-motion in Framer Motion configurations.",
+    "testing": "All interactive elements, forms, and cards MUST include data-testid attributes (e.g., data-testid='create-entry-btn')."
+  },
+  "media_and_images": {
+    "aesthetic": "Dark, moody, abstract liquid cyans or premium notebooks to convey high-end luxury.",
+    "image_urls": {
+      "hero_background": "https://images.unsplash.com/photo-1710438399422-2fca27686bcd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhcmslMjBjeWFuJTIwbGlxdWlkJTIwbHV4dXJ5fGVufDB8fHx8MTc4NDA1NTg0Mnww&ixlib=rb-4.1.0&q=85",
+      "auth_side_panel": "https://images.unsplash.com/photo-1567095751004-aa51a2690368?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMGRhcmslMjBjeWFuJTIwbGlxdWlkJTIwbHV4dXJ5fGVufDB8fHx8MTc4NDA1NTg0Mnww&ixlib=rb-4.1.0&q=85",
+      "empty_state_journal": "https://images.unsplash.com/photo-1772408186777-7bbc603c4fb3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHwzfHxwcmVtaXVtJTIwZGFyayUyMG5vdGVib29rJTIwam91cm5hbHxlbnwwfHx8fDE3ODQwNTU4NDJ8MA&ixlib=rb-4.1.0&q=85"
+    }
+  },
+  "universal_guidelines_for_main_agent": [
+    "Use React (.js / .jsx) extensions exclusively. Do NOT use TypeScript (.tsx).",
+    "Never use pure black without texturing; base background should be #030508.",
+    "Do NOT use completely transparent backgrounds for overlays, dialogs, or dropdowns. Always use glassmorphism (bg-[#0B0E14]/80 backdrop-blur-xl).",
+    "Avoid generic centered layouts. Prioritize Grid/Bento layouts for dashboards.",
+    "Install and use 'lucide-react' for all icons.",
+    "Install 'framer-motion' for the 'moving diaries' floating animation and staggered card entrances.",
+    "Use 'sonner' for toast notifications (e.g., 'Entry saved successfully', 'Image uploaded').",
+    "Do NOT use the generic 'inter' font for headings; strictly use 'Playfair Display' for the luxury journal vibe.",
+    "NEVER use generic placeholder image URLs; use the provided Unsplash URLs.",
+    "Ensure 'data-testid' is added to every form input, submit button, and diary card for robust automated testing."
+  ],
+  "instructions_to_main_agent": "Create a fully functional, React (.js) + Tailwind based dashboard application. Implement standard Shadcn UI components but heavily customize them to match the Black + Cyan theme. Build an animated hero/dashboard empty state featuring floating 'diary cards' using Framer Motion to satisfy the 'moving diaries' requirement. Use layered elevation with subtle borders (border-white/5) to separate cards, avoiding aggressive drop shadows in dark mode. Include full CRUD flows for diary entries, image attachments, and a mood tracker widget. Follow F-Pattern layout principles for the dashboard interface."
+}
